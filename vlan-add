@@ -1,0 +1,139 @@
+#! /usr/bin/env python
+
+# *------------------------------------------------------------------
+# * vlan-add.py
+# *
+# * Cisco ONE-P Python SDK
+# *
+# * Copyright (c) 2011-2014 by Cisco Systems, Inc.
+# * All rights reserved.
+# *------------------------------------------------------------------
+# *
+
+import logging
+import getopt
+import sys
+import getpass
+from onep.element import NetworkElement
+from onep.element import SessionConfig
+from onep.vty.VtyService import VtyService
+
+
+logging.basicConfig(level=logging.WARNING)
+
+element_address = None
+username = None
+password = None
+transport = "tls"
+network_element = None
+session_handle = None
+root_cert_path = None
+client_cert_path = None
+client_key_path = None
+vlan_to_add = None
+
+# Must have a Cisco network device capable of communicating
+# with ONE-P APIs.  Network Element must also have onep
+# configured with the socket transport and have the correct
+# onep services activated.  A network interface must be
+# configured with a valid IP address and pingable.
+#
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# This script will prompt the user to enter a VLAN ID to be created on multiple switches.
+# This is designed to speed vlan addition in a fabricpath network, the VLAN is set to mode fabricpath.
+# The user must create a text file in the directory where the script is executed called "switches".
+# The text file should have the IP address of each switch where the VLAN will be added, one addr per line.
+# This script is provided as a basic example of extending the sample.py script to do different functions.
+# Additional checking and error-handling logic would make this more practical, for now just an example.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def parse_command_line(args):
+    """
+    Parse the command line options. If the required argument "-a" for element address or FQDN is not provided,
+    this method displays the proper usage information and calls sys.exit(1).
+
+    @param args  The args string passed into the main(...) method.
+
+    @return true if parsing the command line succeeds, false otherwise.
+    """
+    try:
+        opts, args = getopt.getopt(args[1:],"ha:t:R:C:K:",["address=","transport=", "rootcert=", "clientcert=", "key="])
+    except getopt.GetoptError as err:
+        print str(err)
+        logger.info(get_usage())
+        sys.exit(2)
+
+    """
+     * options:
+     *       -a, --address <network element address or FQDN>
+     *       -t, --transport <transport type> default is tls
+     *       -C, --clientcert <client certificate file>
+     *       -K, --clientkey <client private key file>
+     *       -R, --rootcert <root certificates file>
+    """
+    for option, arg in opts:
+        if option == '-h':
+            logger.info(get_usage())
+            sys.exit()
+        elif option in ("-a", "--address"):
+            global element_address
+            element_address = arg
+        elif option in ("-t", "--transport"):
+            global transport
+            transport = arg
+        elif option in ("-R", "--rootcert"):
+            global root_cert_path
+            root_cert_path = arg
+        elif option in ("-C", "--clientcert"):
+            global client_cert_path
+            client_cert_path = arg
+        elif option in ("-K", "--key"):
+            global client_key_path
+            client_key_path = arg
+    global username
+    username = raw_input('Enter Username : ')
+    global password
+    password = getpass.getpass('Enter Password : ')
+    global vlan_to_add
+    vlan_to_add = raw_input('Enter VLAN to ADD : ')
+
+    return True
+
+def get_usage():
+        return " Usage: -a <address or FQDN> [-t <transport>] [-C <client cert file>] \n [-K <client private key file>] \n [-R <root certificates file>]"
+
+def sampleapp():
+    appname = raw_input('Enter name of application : ')
+
+    session_config = SessionConfig(SessionConfig.SessionTransportMode.TLS) #default is TLS
+    if transport.lower() == "tipc" or transport == 2:
+        session_config = SessionConfig(SessionConfig.SessionTransportMode.TIPC)
+
+    session_config.ca_certs = root_cert_path
+    session_config.certfile = client_cert_path
+    session_config.keyfile = client_key_path
+
+    devices = open('switches','r')
+    for line in devices:
+        element_address = line.rstrip('\n')
+        ne = NetworkElement(element_address, appname)
+        con = ne.connect(username, password, session_config)
+        print 'Connected to host'
+
+        vty = VtyService(ne)
+        vty.open()
+        vty.write("conf t")
+        vty.write("vlan " + vlan_to_add)
+        vty.write("mode fab")
+        vty.write("exit")
+        vty.close()
+
+        ne.disconnect()
+
+if __name__=='__main__':
+    logger = logging.getLogger('onep')
+    logger.setLevel(logging.INFO)
+    if not parse_command_line(sys.argv):
+        logger.error("Error in parsing arguments")
+        sys.exit(1)
+    sampleapp()
